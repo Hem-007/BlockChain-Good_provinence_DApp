@@ -1,7 +1,8 @@
 import type {NextConfig} from 'next';
 
 const nextConfig: NextConfig = {
-  output: 'export',
+  // Temporarily comment out export for development
+  // output: 'export',
   /* config options here */
   typescript: {
     ignoreBuildErrors: true,
@@ -20,6 +21,7 @@ const nextConfig: NextConfig = {
   // Disable source maps in production
   productionBrowserSourceMaps: false,
   images: {
+    unoptimized: true, // Disable image optimization for static export
     remotePatterns: [
       {
         protocol: 'https',
