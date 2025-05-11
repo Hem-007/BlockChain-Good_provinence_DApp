@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import type { Product, Artisan } from '@/types';
 import { getProductById, purchaseProduct, getArtisanDetails } from '@/lib/blockchainService';
@@ -11,11 +11,12 @@ import { useWallet } from '@/contexts/WalletContext';
 import { useToast } from '@/hooks/use-toast';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
-import { AlertCircle, CalendarDays, Layers, Palette, ShoppingCart, Sparkles, Tag, User, CheckCircle, Info, Loader2, ExternalLink } from 'lucide-react';
+import { AlertCircle, CalendarDays, Layers, Palette, ShoppingCart, Sparkles, Tag, User, CheckCircle, Info, Loader2, ExternalLink, Copy, Gem, FileCheck } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import Link from 'next/link';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 
 export default function ProductDetailPage() {
@@ -31,6 +32,9 @@ export default function ProductDetailPage() {
   const [isPurchasing, setIsPurchasing] = useState(false);
   const [purchaseStep, setPurchaseStep] = useState<'idle' | 'confirm_transaction' | 'processing' | 'success' | 'error'>('idle');
   const [error, setError] = useState<string | null>(null);
+  const [tokenId, setTokenId] = useState<string | null>(null);
+  const [transactionHash, setTransactionHash] = useState<string | null>(null);
+  const [copied, setCopied] = useState<boolean>(false);
 
   useEffect(() => {
     if (typeof id === 'string') {
@@ -73,16 +77,23 @@ export default function ProductDetailPage() {
     setPurchaseStep('confirm_transaction');
 
     const purchaseResult = await purchaseProduct(product.id, account, product.price);
-    
+
     if (purchaseResult.success) {
       setPurchaseStep('processing');
+      setTransactionHash(purchaseResult.transactionHash || null);
+
+      // Generate token ID the same way as in blockchainService.ts
+      const match = product.id.match(/\d+/);
+      const generatedTokenId = match ? match[0] : Math.floor(Date.now() / 1000).toString();
+      setTokenId(generatedTokenId);
+
       toast({
         title: "Purchase Processing",
         description: `Transaction submitted (Hash: ${purchaseResult.transactionHash?.substring(0,10)}...). Waiting for confirmation.`,
       });
-      
+
       // Simulate backend processing after transaction confirmation
-      await new Promise(resolve => setTimeout(resolve, 1500)); 
+      await new Promise(resolve => setTimeout(resolve, 1500));
 
       setPurchaseStep('success');
       toast({
@@ -93,7 +104,13 @@ export default function ProductDetailPage() {
       // Refresh product data to show as sold
       const updatedProduct = await getProductById(product.id);
       setProduct(updatedProduct || null);
-      await refreshNfts(); // Refresh user's NFT list
+
+      // Refresh user's NFT list with a slight delay to ensure everything is saved
+      setTimeout(async () => {
+        console.log("Refreshing NFTs after purchase");
+        await refreshNfts();
+        console.log("NFTs refreshed after purchase");
+      }, 1000);
     } else {
       setPurchaseStep('error');
       // Toast is already handled in blockchainService for failed Metamask transaction
@@ -113,6 +130,25 @@ export default function ProductDetailPage() {
     }
     return 'Buy Now';
   };
+
+  const copyToClipboard = useCallback(async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      toast({
+        title: "Copied!",
+        description: "ID copied to clipboard"
+      });
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy: ', err);
+      toast({
+        title: "Copy failed",
+        description: "Please try again or copy manually",
+        variant: "destructive"
+      });
+    }
+  }, [toast]);
 
 
   if (isLoading) {
@@ -185,7 +221,7 @@ export default function ProductDetailPage() {
 
             <CardContent className="p-0 flex-grow space-y-4">
               <p className="text-foreground leading-relaxed text-base">{product.description}</p>
-              
+
               <Separator className="my-4" />
 
               <div className="space-y-3 text-sm">
@@ -197,12 +233,31 @@ export default function ProductDetailPage() {
                   <CalendarDays size={16} className="mr-3 text-primary flex-shrink-0" />
                   <strong>Created:</strong> <span className="ml-1 text-muted-foreground">{new Date(product.creationDate).toLocaleDateString()}</span>
                 </div>
-                <div className="flex items-center">
-                  <Layers size={16} className="mr-3 text-primary flex-shrink-0" />
-                  <strong>Product ID:</strong> <span className="ml-1 text-muted-foreground break-all font-mono text-xs">{product.id}</span>
+                <div className="flex items-center justify-between group">
+                  <div className="flex items-center">
+                    <Layers size={16} className="mr-3 text-primary flex-shrink-0" />
+                    <strong>Product ID:</strong> <span className="ml-1 text-muted-foreground break-all font-mono text-xs">{product.id}</span>
+                  </div>
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
+                          onClick={() => copyToClipboard(product.id)}
+                        >
+                          <Copy size={14} />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>Copy Product ID</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
                 </div>
               </div>
-              
+
               <Separator className="my-4" />
 
               <div className="flex items-center justify-between">
@@ -224,32 +279,101 @@ export default function ProductDetailPage() {
             <div className="mt-8 pt-6 border-t border-border">
               <Button
                 size="lg"
-                className="w-full text-lg py-3 h-14"
+                className={`w-full text-lg py-3 h-14 transition-all duration-300 ${!isPurchasing && !product.isSold && account ? 'hover:scale-[1.02] hover:shadow-md' : ''}`}
                 onClick={handlePurchase}
                 disabled={isPurchasing || product.isSold || !account || purchaseStep === 'success'}
               >
-                {isPurchasing && <Loader2 size={20} className="mr-2 animate-spin" />}
+                {isPurchasing && (
+                  <>
+                    {purchaseStep === 'confirm_transaction' && <Loader2 size={20} className="mr-2 animate-spin" />}
+                    {purchaseStep === 'processing' && <Loader2 size={20} className="mr-2 animate-spin animate-pulse" />}
+                  </>
+                )}
                 <ShoppingCart size={20} className={isPurchasing ? "hidden": "mr-2"} />
                 {getButtonText()}
               </Button>
-              {!account && !product.isSold && 
+              {!account && !product.isSold &&
                 <Button variant="outline" className="w-full mt-3" onClick={connectWalletFromContext}>
                     Connect Wallet to Buy
                 </Button>
               }
               {purchaseStep === 'success' && (
-                <Alert variant="default" className="mt-4 bg-green-500/10 border-green-500/30 text-green-700">
-                  <CheckCircle className="h-4 w-4 !text-green-700" />
-                  <AlertTitle>Purchase Complete!</AlertTitle>
-                  <AlertDescription>
-                    This item is now in your NFT collection.
-                     <Button variant="link" size="sm" className="p-0 h-auto ml-1 text-green-700 hover:text-green-800" asChild>
+                <div className="space-y-4 mt-4">
+                  <Alert variant="default" className="bg-green-500/10 border-green-500/30 text-green-700">
+                    <CheckCircle className="h-4 w-4 !text-green-700" />
+                    <AlertTitle>Purchase Complete!</AlertTitle>
+                    <AlertDescription>
+                      This item is now in your NFT collection.
+                      <Button variant="link" size="sm" className="p-0 h-auto ml-1 text-green-700 hover:text-green-800" asChild>
                         <Link href="/my-nfts">View My NFTs</Link>
-                     </Button>
-                  </AlertDescription>
-                </Alert>
+                      </Button>
+                    </AlertDescription>
+                  </Alert>
+
+                  <Card className="bg-primary/5 border-primary/20 p-4 animate-in fade-in-50 slide-in-from-bottom-5 duration-500">
+                    <div className="flex items-center justify-between mb-2">
+                      <h3 className="font-semibold text-primary flex items-center">
+                        <Gem size={16} className="mr-2" /> NFT Details
+                      </h3>
+                      <Badge variant="outline" className="bg-primary/10 text-primary">Minted</Badge>
+                    </div>
+                    <div className="space-y-2 text-sm">
+                      <div className="flex items-center justify-between group">
+                        <div className="flex items-center">
+                          <strong>Token ID:</strong> <span className="ml-1 text-muted-foreground font-mono text-xs">{tokenId}</span>
+                        </div>
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
+                                onClick={() => tokenId && copyToClipboard(tokenId)}
+                              >
+                                <Copy size={14} />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              <p>Copy Token ID</p>
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      </div>
+                      {transactionHash && (
+                        <div className="flex items-center justify-between group">
+                          <div className="flex items-center">
+                            <strong>Transaction:</strong> <span className="ml-1 text-muted-foreground font-mono text-xs">{transactionHash.substring(0,10)}...</span>
+                          </div>
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
+                                  onClick={() => transactionHash && copyToClipboard(transactionHash)}
+                                >
+                                  <Copy size={14} />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p>Copy Transaction Hash</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        </div>
+                      )}
+                    </div>
+                  </Card>
+                </div>
               )}
-              <Button variant="outline" className="w-full mt-3" onClick={() => router.push(`/verify?productId=${product.id}`)}>
+              <Button
+                variant={purchaseStep === 'success' ? "default" : "outline"}
+                className={`w-full mt-3 ${purchaseStep === 'success' ? 'bg-primary hover:bg-primary/90' : ''}`}
+                onClick={() => router.push(`/verify?productId=${product.id}`)}
+              >
+                <FileCheck size={18} className="mr-2" />
                 Verify Provenance
               </Button>
             </div>

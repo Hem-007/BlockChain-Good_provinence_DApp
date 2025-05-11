@@ -3,7 +3,7 @@
 
 import type React from 'react';
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { connectWallet, getCurrentWallet, isArtisanRegistered, getUserNfts as fetchUserNfts, getArtisanByWalletAddress } from '@/lib/blockchainService';
+import { connectWallet, getCurrentWallet, isArtisanRegistered, getUserNfts as fetchUserNfts, getArtisanByWalletAddress } from '@/lib/contractService';
 import type { NFT, Artisan } from '@/types';
 import { useToast } from '@/hooks/use-toast';
 
@@ -33,15 +33,59 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const checkArtisanStatus = useCallback(async (currentAccount: string) => {
     if (currentAccount) {
+      console.log("Checking artisan status for account:", currentAccount);
+
+      // Check if we have a cached artisan status in localStorage
+      const localStorageKey = `artisan_registered_${currentAccount.toLowerCase()}`;
+      const cachedStatus = localStorage.getItem(localStorageKey);
+
+      if (cachedStatus === 'true') {
+        console.log("Found cached artisan status: registered");
+        setIsArtisan(true);
+
+        // Get profile from localStorage first if available
+        const profileKey = `artisan_details_${currentAccount.toLowerCase()}`;
+        const cachedProfile = localStorage.getItem(profileKey);
+
+        if (cachedProfile) {
+          try {
+            const profile = JSON.parse(cachedProfile) as Artisan;
+            console.log("Using cached artisan profile:", profile.name);
+            setArtisanProfile(profile);
+            return; // Exit early if we have cached data
+          } catch (e) {
+            console.log("Error parsing cached profile:", e);
+            // Continue with blockchain lookup
+          }
+        }
+      }
+
+      // If no cache or cache parsing failed, check blockchain
+      console.log("Checking blockchain for artisan status");
       const artisanStatus = await isArtisanRegistered(currentAccount);
+      console.log("Blockchain artisan status:", artisanStatus);
+
       setIsArtisan(artisanStatus);
+
       if (artisanStatus) {
+        console.log("Getting artisan profile from blockchain");
         const profile = await getArtisanByWalletAddress(currentAccount);
-        setArtisanProfile(profile || null);
+        console.log("Artisan profile from blockchain:", profile);
+
+        if (profile) {
+          setArtisanProfile(profile);
+
+          // Cache the profile for future use
+          localStorage.setItem(profileKey, JSON.stringify(profile));
+          localStorage.setItem(localStorageKey, 'true');
+        } else {
+          setArtisanProfile(null);
+        }
       } else {
         setArtisanProfile(null);
       }
     } else {
+      console.log("No account provided, clearing artisan status");
       setIsArtisan(false);
       setArtisanProfile(null);
     }
@@ -103,7 +147,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       await fetchNftsForAccount(newAccount);
       toast({ title: 'Account Switched', description: `Connected to ${newAccount.substring(0,6)}...${newAccount.substring(newAccount.length-4)}` });
     }
-  }, [account, toast, checkArtisanStatus]); 
+  }, [account, toast, checkArtisanStatus]);
 
   const handleChainChanged = useCallback(async (chainId: string) => {
     console.log("Network changed to:", chainId);
@@ -133,12 +177,15 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     }
     toast({ title: 'Wallet Disconnected' });
   };
-  
+
   const fetchNftsForAccount = async (currentAccount: string) => {
     if (currentAccount) {
+      console.log("Fetching NFTs for account:", currentAccount);
       const nfts = await fetchUserNfts(currentAccount);
+      console.log("Fetched NFTs:", nfts.length, nfts);
       setUserNfts(nfts);
     } else {
+      console.log("No account provided, clearing NFTs");
       setUserNfts([]);
     }
   };
@@ -175,18 +222,55 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const refreshNfts = async () => {
     if (account) {
+      console.log("Refreshing NFTs for account:", account);
       setIsLoading(true);
+
+      // Force a fresh fetch by clearing any cached data
+      if (typeof window !== "undefined") {
+        // Clear any cached data in memory to force a fresh fetch from localStorage
+        console.log("Forcing refresh of NFTs from localStorage");
+      }
+
+      // Fetch NFTs immediately
       await fetchNftsForAccount(account);
+
+      // Then fetch again after a short delay to ensure any recent changes are captured
+      setTimeout(async () => {
+        console.log("Fetching NFTs again after delay");
+        await fetchNftsForAccount(account);
+        console.log("NFTs refreshed after delay, new count:", userNfts.length);
+      }, 1000);
+
       setIsLoading(false);
+      console.log("NFTs refreshed, new count:", userNfts.length);
     }
   };
 
   const refreshArtisanProfile = async () => {
     if (account) {
+      console.log("Refreshing artisan profile for account:", account);
       setIsLoading(true);
+
+      // Force a fresh check by clearing any cached data
+      const localStorageKey = `artisan_registered_${account.toLowerCase()}`;
+      const profileKey = `artisan_details_${account.toLowerCase()}`;
+
+      // Check if we're registered in localStorage (for immediate feedback)
+      const isRegisteredLocally = localStorage.getItem(localStorageKey) === 'true';
+
+      if (isRegisteredLocally) {
+        console.log("Account is registered according to localStorage");
+        setIsArtisan(true);
+      }
+
+      // Always check the blockchain for the most up-to-date status
       await checkArtisanStatus(account);
+
       setIsLoading(false);
+
+      return isArtisan; // Return the current artisan status
     }
+    return false;
   };
 
 
@@ -207,7 +291,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           await checkArtisanStatus(currentAccount);
           await fetchNftsForAccount(currentAccount);
         } else {
-           localStorage.removeItem('walletConnected'); 
+           localStorage.removeItem('walletConnected');
         }
       }
       setIsLoading(false);

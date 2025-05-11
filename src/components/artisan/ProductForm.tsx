@@ -1,4 +1,3 @@
-
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -20,17 +19,18 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { FileUpload } from "@/components/ui/file-upload";
 import type { Product } from '@/types';
 import { useWallet } from "@/contexts/WalletContext";
-import { addProduct, updateProduct as blockchainUpdateProduct } from "@/lib/blockchainService"; // Aliased to avoid name clash
+import { addProduct, updateProduct as blockchainUpdateProduct } from "@/lib/contractService"; // Aliased to avoid name clash
 import { useRouter } from "next/navigation";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Loader2, PlusCircle, Save } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { isArtisanRegistered, registerArtisan } from "@/lib/contractService";
 
 const productFormSchema = z.object({
   name: z.string().min(3, { message: "Product name must be at least 3 characters." }).max(100),
   description: z.string().min(10, { message: "Description must be at least 10 characters." }).max(1000),
-  materials: z.string().min(3, { message: "Materials must be at least 3 characters." }).transform(val => val.split(',').map(s => s.trim()).filter(s => s.length > 0)),
+  materials: z.string().min(3, { message: "Materials must be at least 3 characters." }),
   imageUrl: z.union([
     z.string().url({ message: "Please enter a valid image URL (e.g., picsum.photos)." }),
     z.instanceof(File, { message: "Please upload a valid image file." }),
@@ -52,12 +52,53 @@ export default function ProductForm({ product }: ProductFormProps) {
   const { toast } = useToast();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitStep, setSubmitStep] = useState<'idle' | 'confirm_transaction' | 'processing' | 'success' | 'error'>('idle');
+  const [isArtisan, setIsArtisan] = useState<boolean | null>(null);
+
+  // Check if the connected wallet is registered as an artisan
+  useEffect(() => {
+    const checkArtisanStatus = async () => {
+      if (account) {
+        try {
+          console.log("Checking if wallet is registered as artisan:", account);
+          const registered = await isArtisanRegistered(account);
+          console.log("Artisan registration status:", registered);
+          setIsArtisan(registered);
+
+          // If not registered, register automatically for demo purposes
+          if (!registered) {
+            console.log("Wallet not registered as artisan, registering now...");
+            try {
+              const result = await registerArtisan({
+                name: "Demo Artisan",
+                bio: "Automatically registered artisan for demo purposes",
+                profileImage: `https://picsum.photos/seed/${Date.now()}/200/200`
+              }, account);
+
+              if (result.success) {
+                console.log("Artisan registered successfully:", result);
+                setIsArtisan(true);
+                toast({ title: "Artisan Registered", description: "Your wallet has been registered as an artisan for demo purposes." });
+              } else {
+                console.error("Failed to register artisan:", result);
+              }
+            } catch (regError) {
+              console.error("Error registering artisan:", regError);
+            }
+          }
+        } catch (error) {
+          console.error("Error checking artisan status:", error);
+        }
+      }
+    };
+
+    checkArtisanStatus();
+  }, [account, toast]);
 
   const defaultValues: Partial<ProductFormValues> = product
     ? {
         name: product.name,
         description: product.description,
-        materials: product.materials.join(', '),
+        materials: Array.isArray(product.materials) ? product.materials.join(', ') : '',
         imageUrl: product.imageUrl,
         price: product.price,
         isVerified: product.isVerified,
@@ -78,78 +119,147 @@ export default function ProductForm({ product }: ProductFormProps) {
   });
 
   async function onSubmit(data: ProductFormValues) {
+    console.log("Form submitted with data:", data);
+    console.log("Current account:", account);
+    console.log("Is artisan:", isArtisan);
+
     if (!account) {
       toast({ title: "Error", description: "Wallet not connected or artisan not identified.", variant: "destructive" });
       return;
     }
+
+    // Check if the user is registered as an artisan
+    if (isArtisan === false) {
+      toast({ title: "Not Registered", description: "You need to be registered as an artisan to add products. Registering automatically...", variant: "default" });
+      try {
+        const result = await registerArtisan({
+          name: "Demo Artisan",
+          bio: "Automatically registered artisan for demo purposes",
+          profileImage: `https://picsum.photos/seed/${Date.now()}/200/200`
+        }, account);
+
+        if (!result.success) {
+          toast({ title: "Registration Failed", description: "Could not register you as an artisan. Please try again.", variant: "destructive" });
+          return;
+        }
+
+        setIsArtisan(true);
+        toast({ title: "Registration Successful", description: "You have been registered as an artisan. Now adding your product..." });
+      } catch (regError) {
+        console.error("Error registering artisan:", regError);
+        toast({ title: "Registration Error", description: "An error occurred while registering you as an artisan.", variant: "destructive" });
+        return;
+      }
+    }
+
     setIsSubmitting(true);
+    setSubmitStep('confirm_transaction');
+
     try {
       // Handle image upload if it's a File object
       let imageUrl = data.imageUrl;
 
       if (data.imageUrl instanceof File) {
-        // In a real app, you would upload the file to a server or IPFS here
-        // For this simulation, we'll create a local object URL
         imageUrl = URL.createObjectURL(data.imageUrl);
         toast({ title: "Image Processing", description: "Simulating image upload..." });
-        await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate upload delay
+        await new Promise(resolve => setTimeout(resolve, 1000));
       } else if (!data.imageUrl) {
-        // Use a default placeholder if no image is provided
         imageUrl = `https://picsum.photos/seed/${Date.now()}/600/400`;
       }
 
-      if (product) { // Editing existing product
+      if (product) {
         setSubmitStep('processing');
+
+        // Convert materials string to array
+        const materialsArray = data.materials.split(',').map((s: string) => s.trim()).filter((s: string) => s.length > 0);
+
         const updatedProductData: Partial<Product> = {
-            ...data,
-            materials: data.materials,
-            imageUrl: imageUrl as string,
+          name: data.name,
+          description: data.description,
+          materials: materialsArray,
+          imageUrl: imageUrl as string,
+          price: data.price,
+          isVerified: data.isVerified
         };
-        const result = await blockchainUpdateProduct(product.id, updatedProductData, account); // This does not involve Metamask tx in current simulation
-        if (result) {
+
+        const result = await blockchainUpdateProduct(product.id, updatedProductData, account);
+
+        if (result && result.success) {
           setSubmitStep('success');
-          toast({ title: "Success", description: "Product updated successfully (simulated)." });
+          toast({ title: "Success", description: "Product updated successfully." });
           router.push("/dashboard/products");
           router.refresh();
         } else {
           setSubmitStep('error');
-          toast({ title: "Error", description: "Failed to update product (simulated).", variant: "destructive" });
+          toast({ title: "Error", description: "Failed to update product.", variant: "destructive" });
         }
-      } else { // Adding new product - involves Metamask tx
-        setSubmitStep('confirm_transaction');
+      } else {
+        // Convert materials string to array
+        const materialsArray = data.materials.split(',').map((s: string) => s.trim()).filter((s: string) => s.length > 0);
+
         const newProductData = {
-            name: data.name,
-            description: data.description,
-            materials: data.materials,
-            imageUrl: imageUrl as string,
-            price: data.price,
-            isVerified: data.isVerified,
+          name: data.name,
+          description: data.description,
+          materials: materialsArray,
+          imageUrl: imageUrl as string,
+          price: data.price,
+          isVerified: data.isVerified || false,
         };
 
-        const result = await addProduct(newProductData as Omit<Product, 'id' | 'creationDate' | 'isSold' | 'ownerAddress' | 'artisanId'>, account);
+        console.log("Preparing to add product with data:", newProductData);
 
-        if (result.success && result.product) {
-          setSubmitStep('processing'); // After Metamask, now "processing" the addition
-           toast({ title: "Minting Product", description: `Transaction submitted (Hash: ${result.transactionHash?.substring(0,10)}...). Adding to marketplace.` });
-           await new Promise(resolve => setTimeout(resolve, 1500)); // Simulate backend
+        try {
+          setSubmitStep('confirm_transaction');
+          const result = await addProduct(
+            newProductData as Omit<Product, 'id' | 'creationDate' | 'isSold' | 'ownerAddress' | 'artisanId'>,
+            account
+          );
 
-          setSubmitStep('success');
-          toast({ title: "Success", description: `Product "${result.product.name}" added and minted successfully. Tx: ${result.transactionHash?.substring(0,10)}...` });
-          router.push("/dashboard/products");
-          router.refresh();
-        } else {
+          if (result.success && result.product) {
+            setSubmitStep('processing');
+            toast({
+              title: "Product Created",
+              description: `Transaction submitted. Your product is being minted.`
+            });
+
+            await new Promise(resolve => setTimeout(resolve, 2000));
+
+            setSubmitStep('success');
+            toast({
+              title: "Success",
+              description: `Product "${result.product.name}" added successfully.`
+            });
+
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            window.location.href = `/dashboard/products?t=${Date.now()}`;
+          } else {
+            setSubmitStep('error');
+            toast({
+              title: "Error",
+              description: "Failed to add product. Please try again.",
+              variant: "destructive"
+            });
+          }
+        } catch (innerError) {
+          console.error("Error during product addition:", innerError);
           setSubmitStep('error');
-          // Toast for Metamask failure is handled in addProduct service
+          toast({
+            title: "Error",
+            description: "Failed to add product due to an unexpected error.",
+            variant: "destructive"
+          });
         }
       }
     } catch (error) {
       setSubmitStep('error');
       console.error("Form submission error:", error);
-      toast({ title: "Error", description: "An unexpected error occurred.", variant: "destructive" });
+      toast({
+        title: "Error",
+        description: "An unexpected error occurred.",
+        variant: "destructive"
+      });
     } finally {
       setIsSubmitting(false);
-      // Optionally reset submitStep to 'idle' after a delay if it's 'success' or 'error'
-      // setTimeout(() => setSubmitStep('idle'), 5000);
     }
   }
 
@@ -176,6 +286,12 @@ export default function ProductForm({ product }: ProductFormProps) {
         <CardDescription>
             {product ? "Update the information for your existing product." : "Describe your unique creation and mint it as an NFT on the marketplace (simulated Sepolia transaction)."}
         </CardDescription>
+        {isArtisan === false && (
+          <div className="mt-4 p-3 bg-yellow-100 border border-yellow-300 rounded-md text-yellow-800">
+            <p className="text-sm font-medium">You are not registered as an artisan yet.</p>
+            <p className="text-xs">Don't worry - you'll be automatically registered when you submit the form.</p>
+          </div>
+        )}
       </CardHeader>
       <CardContent>
         <Form {...form}>

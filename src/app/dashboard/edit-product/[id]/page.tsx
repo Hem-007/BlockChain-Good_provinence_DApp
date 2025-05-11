@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import type { Product } from '@/types';
-import { getProductById } from '@/lib/blockchainService';
+import { getProductById } from '@/lib/contractService';
 import ProductForm from '@/components/artisan/ProductForm';
 import { useWallet } from '@/contexts/WalletContext';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -34,7 +34,7 @@ export default function EditProductPage() {
             } else {
               setError("You are not authorized to edit this product or product artisan mismatch.");
               // Optionally redirect
-              // router.push('/dashboard/products'); 
+              // router.push('/dashboard/products');
             }
           } else {
             setError("Product not found.");

@@ -16,7 +16,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useWallet } from "@/contexts/WalletContext";
-import { registerArtisan } from "@/lib/blockchainService";
+import { registerArtisan } from "@/lib/contractService";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -54,24 +54,55 @@ export default function ArtisanRegistrationForm() {
     }
     setIsSubmitting(true);
     try {
+      console.log("Submitting artisan registration form");
       const artisanData = {
         name: data.name,
         bio: data.bio,
         profileImage: data.profileImage || `https://picsum.photos/seed/${encodeURIComponent(data.name)}/200/200`, // Default placeholder if empty
       };
+
+      // Set local storage immediately for better UX
+      const localStorageKey = `artisan_registered_${account.toLowerCase()}`;
+      localStorage.setItem(localStorageKey, 'true');
+
+      // Store artisan details in local storage
+      const artisanDetails = {
+        id: `artisan-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        name: data.name,
+        bio: data.bio,
+        profileImage: data.profileImage || `https://picsum.photos/seed/${encodeURIComponent(data.name)}/200/200`,
+        walletAddress: account
+      };
+      localStorage.setItem(`artisan_details_${account.toLowerCase()}`, JSON.stringify(artisanDetails));
+
+      console.log("Set local storage for immediate feedback");
+
+      // Call the registration function
       const result = await registerArtisan(artisanData, account);
-      if (result) {
+
+      if (result.success) {
+        console.log("Registration successful:", result);
         toast({ title: "Registration Successful", description: "You are now registered as an artisan!" });
-        await refreshArtisanProfile(); // Update context
-        router.push("/dashboard"); // Redirect to dashboard
+
+        // Update the wallet context
+        await refreshArtisanProfile();
+
+        // Redirect to dashboard
+        console.log("Redirecting to dashboard");
+        router.push("/dashboard");
       } else {
-        // The registerArtisan function should handle its own error toasts for specific cases like "already registered"
-        // Generic fallback if needed:
-        // toast({ title: "Registration Failed", description: "Could not register artisan profile.", variant: "destructive" });
+        console.log("Registration failed:", result);
+        // The registerArtisan function should handle its own error toasts
+        localStorage.removeItem(localStorageKey);
+        localStorage.removeItem(`artisan_details_${account.toLowerCase()}`);
       }
     } catch (error) {
       console.error("Artisan registration error:", error);
       toast({ title: "Error", description: "An unexpected error occurred during registration.", variant: "destructive" });
+
+      // Clean up local storage on error
+      localStorage.removeItem(`artisan_registered_${account.toLowerCase()}`);
+      localStorage.removeItem(`artisan_details_${account.toLowerCase()}`);
     } finally {
       setIsSubmitting(false);
     }

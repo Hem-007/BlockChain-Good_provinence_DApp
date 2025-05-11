@@ -8,6 +8,16 @@ const nextConfig: NextConfig = {
   eslint: {
     ignoreDuringBuilds: true,
   },
+  // Fix for source map errors
+  webpack: (config, { dev, isServer }) => {
+    // Optimize source maps in development mode
+    if (dev) {
+      config.devtool = 'eval-source-map';
+    }
+    return config;
+  },
+  // Disable source maps in production
+  productionBrowserSourceMaps: false,
   images: {
     remotePatterns: [
       {

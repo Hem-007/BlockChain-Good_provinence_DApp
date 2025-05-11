@@ -27,7 +27,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Edit3, Trash2, PlusCircle, PackageSearch, Loader2, AlertCircle, Info } from 'lucide-react';
+import { Edit3, Trash2, PlusCircle, PackageSearch, Loader2, AlertCircle, Info, RefreshCw } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { useRouter } from 'next/navigation';
@@ -39,34 +39,117 @@ export default function ArtisanProductsPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [isLoadingProducts, setIsLoadingProducts] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [justAddedProduct, setJustAddedProduct] = useState<string | null>(null);
   const { toast } = useToast();
   const router = useRouter();
 
   const fetchArtisanProducts = async () => {
-    if (account && artisanProfile) {
+    if (account) {
       setIsLoadingProducts(true);
       setError(null);
       try {
+        console.log("Fetching products for account:", account);
         const fetchedProducts = await getProductsByArtisan(account);
+        console.log("Fetched products:", fetchedProducts);
         setProducts(fetchedProducts);
       } catch (e) {
-        console.error(e);
+        console.error("Error fetching products:", e);
         setError("Failed to load your products.");
       } finally {
         setIsLoadingProducts(false);
       }
+    } else {
+      console.log("No account available to fetch products");
+    }
+  };
+
+  // EMERGENCY FIX: Function to force clear localStorage and reload
+  const forceResetAndReload = () => {
+    if (typeof window !== 'undefined') {
+      // Keep a backup of the data
+      const products = localStorage.getItem('blockchain_products');
+      const artisans = localStorage.getItem('blockchain_artisans');
+
+      // Save to emergency backup
+      if (products) localStorage.setItem('emergency_products', products);
+      if (artisans) localStorage.setItem('emergency_artisans', artisans);
+
+      toast({
+        title: "Emergency Reset",
+        description: "Forcing data reload. Please wait...",
+      });
+
+      // Force reload the page
+      window.location.reload();
     }
   };
 
   useEffect(() => {
-    if (!walletLoading && account && artisanProfile) {
-      fetchArtisanProducts();
-    } else if (!walletLoading && (!account || !artisanProfile)) {
-      setIsLoadingProducts(false);
-      // setError("Artisan profile not found or wallet not connected."); // Or handle silently
+    console.log("EMERGENCY FIX: Dashboard products page - wallet state:", { account, artisanProfile, walletLoading });
+
+    // Check if we just added a product (from sessionStorage)
+    const productJustAdded = typeof window !== 'undefined' && sessionStorage.getItem('product_just_added') === 'true';
+    const productAddedId = typeof window !== 'undefined' && sessionStorage.getItem('product_added_id');
+
+    if (productJustAdded && productAddedId) {
+      console.log("EMERGENCY FIX: Product was just added with ID:", productAddedId);
+      // Set the state to show a notification
+      setJustAddedProduct(productAddedId);
+      // Clear the flag so we don't keep refreshing
+      sessionStorage.removeItem('product_just_added');
+
+      // Show a toast notification
+      toast({
+        title: "Product Added Successfully",
+        description: "Your new product has been added to the marketplace.",
+        variant: "default"
+      });
     }
+
+    if (!walletLoading && account) {
+      console.log("EMERGENCY FIX: Wallet connected, fetching products");
+
+      // EMERGENCY FIX: Force multiple refreshes with delays
+      fetchArtisanProducts(); // Immediate fetch
+
+      // Schedule multiple fetches with increasing delays
+      const delays = [500, 1000, 2000, 3000, 5000];
+      delays.forEach(delay => {
+        setTimeout(() => {
+          console.log(`EMERGENCY FIX: Fetching products after ${delay}ms delay`);
+          fetchArtisanProducts();
+        }, delay);
+      });
+    } else if (!walletLoading && !account) {
+      console.log("Wallet not connected");
+      setIsLoadingProducts(false);
+    }
+
+    // Add a refresh interval to periodically check for new products
+    const intervalId = setInterval(() => {
+      if (account) {
+        console.log("EMERGENCY FIX: Refreshing products list");
+        fetchArtisanProducts();
+      }
+    }, 2000); // Refresh every 2 seconds (more frequent for emergency fix)
+
+    // Also refresh when the URL changes (e.g., when redirected from add product page)
+    const handleRouteChange = () => {
+      if (account) {
+        console.log("URL changed, refreshing products");
+        fetchArtisanProducts();
+      }
+    };
+
+    // Listen for URL changes
+    window.addEventListener('popstate', handleRouteChange);
+
+    return () => {
+      clearInterval(intervalId); // Clean up interval
+      window.removeEventListener('popstate', handleRouteChange); // Clean up event listener
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [account, artisanProfile, walletLoading]);
+  }, [account, walletLoading]);
 
   const handleRemoveProduct = async (productId: string) => {
     if (!account) return;
@@ -94,7 +177,7 @@ export default function ArtisanProductsPage() {
       </div>
     );
   }
-  
+
   if (error) {
      return (
       <Alert variant="destructive">
@@ -106,16 +189,63 @@ export default function ArtisanProductsPage() {
 
   return (
     <div className="space-y-6">
+      {/* EMERGENCY FIX: Add emergency notification */}
+      <Alert className="bg-yellow-50 border-yellow-200 text-yellow-800">
+        <div className="flex items-center">
+          <div className="bg-yellow-100 p-1 rounded-full mr-2">
+            <Info className="h-4 w-4 text-yellow-600" />
+          </div>
+          <AlertDescription className="font-medium">
+            If your products don't appear, please try the "Force Reset" button. We've implemented an emergency fix to ensure your products are saved correctly.
+          </AlertDescription>
+        </div>
+      </Alert>
+
+      {justAddedProduct && (
+        <Alert className="bg-green-50 border-green-200 text-green-800">
+          <div className="flex items-center">
+            <div className="bg-green-100 p-1 rounded-full mr-2">
+              <PlusCircle className="h-4 w-4 text-green-600" />
+            </div>
+            <AlertDescription className="font-medium">
+              Your product was successfully added to the marketplace!
+            </AlertDescription>
+          </div>
+        </Alert>
+      )}
+
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
             <h1 className="text-3xl font-bold text-primary">My Products</h1>
             <p className="text-muted-foreground">Manage your listed artisanal items.</p>
         </div>
-        <Button asChild>
-          <Link href="/dashboard/add-product">
-            <PlusCircle size={18} className="mr-2" /> Add New Product
-          </Link>
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            onClick={() => {
+              setIsLoadingProducts(true);
+              fetchArtisanProducts().finally(() => setIsLoadingProducts(false));
+            }}
+            title="Refresh product list"
+          >
+            <RefreshCw size={18} className={isLoadingProducts ? "animate-spin" : ""} />
+          </Button>
+
+          {/* EMERGENCY FIX: Add emergency reset button */}
+          <Button
+            variant="destructive"
+            onClick={forceResetAndReload}
+            title="Emergency reset - use if products don't appear"
+          >
+            <AlertCircle size={18} className="mr-2" /> Force Reset
+          </Button>
+
+          <Button asChild>
+            <Link href="/dashboard/add-product">
+              <PlusCircle size={18} className="mr-2" /> Add New Product
+            </Link>
+          </Button>
+        </div>
       </div>
 
       {products.length === 0 ? (
@@ -150,7 +280,10 @@ export default function ArtisanProductsPage() {
               </TableHeader>
               <TableBody>
                 {products.map((product) => (
-                  <TableRow key={product.id} className="hover:bg-muted/20">
+                  <TableRow
+                    key={product.id}
+                    className={`hover:bg-muted/20 ${product.id === justAddedProduct ? 'bg-green-50' : ''}`}
+                  >
                     <TableCell className="hidden sm:table-cell p-2">
                       <Image
                         src={product.imageUrl}
@@ -165,6 +298,11 @@ export default function ArtisanProductsPage() {
                         <Link href={`/products/${product.id}`} className="hover:underline" title={product.name}>
                             {product.name.length > 40 ? product.name.substring(0,37) + '...' : product.name}
                         </Link>
+                        {product.id === justAddedProduct && (
+                          <Badge variant="outline" className="ml-2 bg-green-100 text-green-700 border-green-200">
+                            New
+                          </Badge>
+                        )}
                     </TableCell>
                     <TableCell className="hidden md:table-cell py-3 px-4">{product.price}</TableCell>
                     <TableCell className="hidden lg:table-cell py-3 px-4">

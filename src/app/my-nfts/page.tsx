@@ -6,18 +6,18 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import Image from 'next/image';
 import { watchAssetInWallet } from '@/lib/blockchainService';
-import { Gem, ExternalLink, Info, ImageOff, Loader2 } from 'lucide-react';
+import { Gem, ExternalLink, Info, ImageOff, Loader2, RefreshCw } from 'lucide-react';
 import Link from 'next/link';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from '@/components/ui/badge'; // Ensure Badge is imported
 
 export default function MyNftsPage() {
-  const { account, userNfts, isLoading, connect } = useWallet();
+  const { account, userNfts, isLoading, connect, refreshNfts } = useWallet();
 
   const handleAddToWallet = async (nft: NFT) => {
     await watchAssetInWallet(nft);
   };
-  
+
   if (isLoading && !account) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh]">
@@ -42,7 +42,7 @@ export default function MyNftsPage() {
       </div>
     );
   }
-  
+
   if (userNfts.length === 0) {
     return (
       <div className="text-center min-h-[60vh] flex flex-col items-center justify-center">
@@ -64,11 +64,23 @@ export default function MyNftsPage() {
         <h1 className="text-3xl font-bold text-primary flex items-center">
           <Gem size={30} className="mr-3" /> My NFT Collection
         </h1>
-        <Badge variant="secondary" className="text-lg px-3 py-1">
-          {userNfts.length} Item{userNfts.length === 1 ? '' : 's'}
-        </Badge>
+        <div className="flex items-center gap-3">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => refreshNfts()}
+            disabled={isLoading}
+            title="Refresh NFT collection"
+          >
+            <RefreshCw size={16} className={isLoading ? "animate-spin mr-2" : "mr-2"} />
+            Refresh
+          </Button>
+          <Badge variant="secondary" className="text-lg px-3 py-1">
+            {userNfts.length} Item{userNfts.length === 1 ? '' : 's'}
+          </Badge>
+        </div>
       </div>
-      
+
       <Alert className="mb-6 bg-primary/5 border-primary/20">
         <Info className="h-4 w-4 text-primary" />
         <AlertTitle>Simulated NFTs</AlertTitle>

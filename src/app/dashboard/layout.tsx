@@ -11,18 +11,45 @@ export default function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const { account, isArtisan, isLoading } = useWallet();
+  const { account, isArtisan, isLoading, refreshArtisanProfile } = useWallet();
   const router = useRouter();
 
   useEffect(() => {
-    if (!isLoading && !account) {
-      router.replace('/'); // Or a login page
-    } else if (!isLoading && account && !isArtisan) {
-      router.replace('/'); // Not an artisan, redirect to homepage
-    }
-  }, [account, isArtisan, isLoading, router]);
+    const checkStatus = async () => {
+      console.log("Dashboard layout - checking status:", { account, isArtisan, isLoading });
 
-  if (isLoading || !account || !isArtisan) {
+      if (!isLoading) {
+        if (!account) {
+          console.log("No account connected, redirecting to home");
+          router.replace('/');
+        } else if (!isArtisan) {
+          // Check local storage first for immediate feedback
+          const localStorageKey = `artisan_registered_${account.toLowerCase()}`;
+          const isRegisteredLocally = typeof window !== 'undefined' ?
+            window.localStorage.getItem(localStorageKey) === 'true' :
+            false;
+
+          if (isRegisteredLocally) {
+            console.log("Found local registration, refreshing artisan profile");
+            // If registered in local storage, refresh the profile from blockchain
+            await refreshArtisanProfile();
+          } else {
+            console.log("Not an artisan, redirecting to home");
+            router.replace('/');
+          }
+        }
+      }
+    };
+
+    checkStatus();
+  }, [account, isArtisan, isLoading, router, refreshArtisanProfile]);
+
+  // Check if we're registered in local storage for immediate feedback
+  const isRegisteredLocally = account && typeof window !== 'undefined' ?
+    window.localStorage.getItem(`artisan_registered_${account.toLowerCase()}`) === 'true' :
+    false;
+
+  if (isLoading || !account || (!isArtisan && !isRegisteredLocally)) {
     return (
       <div className="flex items-center justify-center h-screen bg-background">
         <div className="text-center">
