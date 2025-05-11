@@ -5,7 +5,6 @@ import type { NFT } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import Image from 'next/image';
-import { watchAssetInWallet } from '@/lib/blockchainService';
 import { Gem, ExternalLink, Info, ImageOff, Loader2, RefreshCw } from 'lucide-react';
 import Link from 'next/link';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -13,10 +12,6 @@ import { Badge } from '@/components/ui/badge'; // Ensure Badge is imported
 
 export default function MyNftsPage() {
   const { account, userNfts, isLoading, connect, refreshNfts } = useWallet();
-
-  const handleAddToWallet = async (nft: NFT) => {
-    await watchAssetInWallet(nft);
-  };
 
   if (isLoading && !account) {
     return (
@@ -85,7 +80,7 @@ export default function MyNftsPage() {
         <Info className="h-4 w-4 text-primary" />
         <AlertTitle>Simulated NFTs</AlertTitle>
         <AlertDescription>
-          This page displays your simulated NFT collection. The "Add to Metamask" feature will attempt to use `wallet_watchAsset` which may or may not be fully supported for all test networks or token types by your wallet.
+          This page displays your simulated NFT collection. Each NFT includes a transaction ID for verification. Due to MetaMask limitations, NFTs are not automatically added to your wallet.
         </AlertDescription>
       </Alert>
 
@@ -100,6 +95,7 @@ export default function MyNftsPage() {
                   fill
                   className="object-cover"
                   data-ai-hint="nft image"
+                  unoptimized={nft.imageUrl?.startsWith('data:')} // Don't optimize base64 images
                 />
               ) : (
                 <div className="w-full h-full bg-muted flex items-center justify-center">
@@ -113,12 +109,29 @@ export default function MyNftsPage() {
               <p className="text-xs text-muted-foreground truncate mb-3" title={nft.description}>{nft.description}</p>
               <p className="text-xs text-muted-foreground">Token ID: <span className="font-mono break-all">{nft.tokenId}</span></p>
               <p className="text-xs text-muted-foreground">Contract: <span className="font-mono break-all">{nft.contractAddress.substring(0,6)}...{nft.contractAddress.substring(nft.contractAddress.length-4)}</span></p>
+              <div className="mt-2 pt-2 border-t border-border">
+                <p className="text-xs font-medium text-muted-foreground mb-1">Transaction Verification:</p>
+                <div className="flex items-center">
+                  <span className="text-xs font-mono text-muted-foreground truncate" title={nft.transactionHash || "No transaction hash available"}>
+                    {nft.transactionHash
+                      ? `${nft.transactionHash.substring(0,10)}...${nft.transactionHash.substring(nft.transactionHash.length-8)}`
+                      : "Not available"
+                    }
+                  </span>
+                  {nft.transactionHash && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6 ml-1"
+                      onClick={() => window.open(`https://sepolia.etherscan.io/tx/${nft.transactionHash}`, '_blank')}
+                      title="View transaction on Etherscan"
+                    >
+                      <ExternalLink size={12} />
+                    </Button>
+                  )}
+                </div>
+              </div>
             </CardContent>
-            <div className="p-4 border-t">
-              <Button onClick={() => handleAddToWallet(nft)} className="w-full" variant="outline">
-                <ExternalLink size={16} className="mr-2" /> Add to Metamask (Simulated)
-              </Button>
-            </div>
           </Card>
         ))}
       </div>

@@ -200,6 +200,7 @@ export default function ProductDetailPage() {
               data-ai-hint="detailed product art"
               priority
               sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+              unoptimized={product.imageUrl.startsWith('data:')} // Don't optimize base64 images
             />
             {product.isVerified && (
               <Badge variant="secondary" className="absolute top-4 left-4 bg-accent text-accent-foreground shadow-md text-sm py-1 px-3">

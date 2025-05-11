@@ -43,18 +43,195 @@ export default function ArtisanProductsPage() {
   const { toast } = useToast();
   const router = useRouter();
 
+  // CRITICAL FIX: Direct function to get products from localStorage
+  const getProductsDirectlyFromStorage = () => {
+    if (typeof window === 'undefined') return [];
+
+    try {
+      // Try all possible localStorage keys
+      const possibleKeys = [
+        'blockchain_products',
+        'emergency_products',
+        'products_data',
+        'products'
+      ];
+
+      let allProducts = [];
+      let foundProducts = false;
+
+      // Log all localStorage keys for debugging
+      console.log("CRITICAL FIX: All localStorage keys:", Object.keys(localStorage));
+
+      for (const key of possibleKeys) {
+        const storedData = localStorage.getItem(key);
+        if (storedData) {
+          try {
+            const parsedData = JSON.parse(storedData);
+            console.log(`CRITICAL FIX: Found products in localStorage key "${key}":`, parsedData.length);
+
+            if (Array.isArray(parsedData) && parsedData.length > 0) {
+              allProducts = [...allProducts, ...parsedData];
+              foundProducts = true;
+            }
+          } catch (e) {
+            console.error(`CRITICAL FIX: Error parsing data from key "${key}":`, e);
+          }
+        }
+      }
+
+      if (foundProducts) {
+        console.log("CRITICAL FIX: Total products found:", allProducts.length);
+        return allProducts;
+      } else {
+        console.log("CRITICAL FIX: No products found in any localStorage key");
+        return [];
+      }
+    } catch (e) {
+      console.error("CRITICAL FIX: Error accessing localStorage:", e);
+      return [];
+    }
+  };
+
+  // CRITICAL FIX: Function to get products for the current artisan
+  const getArtisanProductsDirectly = () => {
+    if (!account) return [];
+
+    // Get all products from all possible storage locations
+    const allProducts = getProductsDirectlyFromStorage();
+    console.log("CRITICAL FIX: All products from storage:", allProducts);
+
+    // Try to find artisan ID
+    let artisanId = null;
+    try {
+      // Try all possible artisan storage keys
+      const possibleKeys = [
+        'blockchain_artisans',
+        'emergency_artisans',
+        'artisans_data',
+        'artisans'
+      ];
+
+      for (const key of possibleKeys) {
+        const artisansData = localStorage.getItem(key);
+        if (artisansData) {
+          try {
+            const artisans = JSON.parse(artisansData);
+            if (Array.isArray(artisans)) {
+              const artisan = artisans.find(a => a.walletAddress && a.walletAddress.toLowerCase() === account.toLowerCase());
+              if (artisan && artisan.id) {
+                artisanId = artisan.id;
+                console.log(`CRITICAL FIX: Found artisan ID in ${key}:`, artisanId);
+                break; // Exit the loop once we find a valid artisan
+              }
+            }
+          } catch (e) {
+            console.error(`CRITICAL FIX: Error parsing artisans from ${key}:`, e);
+          }
+        }
+      }
+    } catch (e) {
+      console.error("CRITICAL FIX: Error finding artisan:", e);
+    }
+
+    // If we found an artisan ID, filter products by it
+    let foundProducts = [];
+
+    if (artisanId) {
+      foundProducts = allProducts.filter(p => p.artisanId === artisanId);
+      console.log("CRITICAL FIX: Filtered products for artisan ID:", foundProducts.length);
+    }
+
+    // If we couldn't find products by artisan ID, try filtering by wallet address
+    if (foundProducts.length === 0) {
+      foundProducts = allProducts.filter(p =>
+        p.ownerAddress && p.ownerAddress.toLowerCase() === account.toLowerCase()
+      );
+      console.log("CRITICAL FIX: Products filtered by wallet address:", foundProducts.length);
+    }
+
+    // If we still couldn't find products, check if there are any NFTs in localStorage
+    if (foundProducts.length === 0) {
+      try {
+        const nftsData = localStorage.getItem('blockchain_user_nfts');
+        if (nftsData) {
+          const nfts = JSON.parse(nftsData);
+          const userNfts = nfts[account.toLowerCase()] || [];
+          console.log("CRITICAL FIX: Found NFTs for user:", userNfts.length);
+
+          // If we have NFTs, try to convert them to products
+          if (userNfts.length > 0) {
+            const nftProducts = userNfts.map(nft => ({
+              id: nft.tokenId || `product-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+              name: nft.name || "Unknown Product",
+              description: nft.description || "No description available",
+              materials: ["Unknown"],
+              artisanId: "unknown",
+              creationDate: new Date().toISOString(),
+              imageUrl: nft.imageUrl || `https://picsum.photos/seed/${Date.now()}/600/400`,
+              price: 0.01,
+              isVerified: false,
+              isSold: true,
+              ownerAddress: account
+            }));
+
+            console.log("CRITICAL FIX: Created products from NFTs:", nftProducts.length);
+
+            // Save these products to localStorage for future use
+            try {
+              const existingProducts = JSON.parse(localStorage.getItem('blockchain_products') || '[]');
+              const combinedProducts = [...existingProducts, ...nftProducts];
+              localStorage.setItem('blockchain_products', JSON.stringify(combinedProducts));
+              console.log("CRITICAL FIX: Saved NFT products to localStorage");
+            } catch (e) {
+              console.error("CRITICAL FIX: Error saving NFT products to localStorage:", e);
+            }
+
+            foundProducts = nftProducts;
+          }
+        }
+      } catch (e) {
+        console.error("CRITICAL FIX: Error checking NFTs:", e);
+      }
+    }
+
+    return foundProducts;
+  };
+
   const fetchArtisanProducts = async () => {
     if (account) {
       setIsLoadingProducts(true);
       setError(null);
       try {
         console.log("Fetching products for account:", account);
-        const fetchedProducts = await getProductsByArtisan(account);
-        console.log("Fetched products:", fetchedProducts);
-        setProducts(fetchedProducts);
+
+        // CRITICAL FIX: First try to get products directly from localStorage
+        const directProducts = getArtisanProductsDirectly();
+
+        if (directProducts && directProducts.length > 0) {
+          console.log("CRITICAL FIX: Using direct products from localStorage:", directProducts.length);
+          setProducts(directProducts);
+        } else {
+          // Fall back to the normal method
+          console.log("CRITICAL FIX: No direct products found, using normal method");
+          const fetchedProducts = await getProductsByArtisan(account);
+          console.log("Fetched products:", fetchedProducts);
+          setProducts(fetchedProducts);
+        }
       } catch (e) {
         console.error("Error fetching products:", e);
         setError("Failed to load your products.");
+
+        // CRITICAL FIX: Even if there's an error, try direct method as last resort
+        try {
+          const directProducts = getArtisanProductsDirectly();
+          if (directProducts && directProducts.length > 0) {
+            console.log("CRITICAL FIX: Using direct products after error:", directProducts.length);
+            setProducts(directProducts);
+            setError(null); // Clear error since we found products
+          }
+        } catch (directError) {
+          console.error("CRITICAL FIX: Error in direct method:", directError);
+        }
       } finally {
         setIsLoadingProducts(false);
       }
@@ -73,6 +250,33 @@ export default function ArtisanProductsPage() {
       // Save to emergency backup
       if (products) localStorage.setItem('emergency_products', products);
       if (artisans) localStorage.setItem('emergency_artisans', artisans);
+
+      // Debug: Log all localStorage keys and their contents
+      console.log("DEBUG: All localStorage keys:", Object.keys(localStorage));
+      Object.keys(localStorage).forEach(key => {
+        try {
+          const value = localStorage.getItem(key);
+          console.log(`DEBUG: localStorage key "${key}":`, value ? value.substring(0, 100) + "..." : "null");
+
+          // If this is a product-related key, try to parse it
+          if (key.includes('product') || key === 'blockchain_products') {
+            try {
+              const parsed = JSON.parse(value || "[]");
+              console.log(`DEBUG: Parsed ${key}:`, parsed.length, "items");
+
+              // If we found products, save them to blockchain_products to ensure they're available
+              if (Array.isArray(parsed) && parsed.length > 0 && key !== 'blockchain_products') {
+                localStorage.setItem('blockchain_products', JSON.stringify(parsed));
+                console.log(`DEBUG: Copied ${parsed.length} products from ${key} to blockchain_products`);
+              }
+            } catch (e) {
+              console.error(`DEBUG: Error parsing ${key}:`, e);
+            }
+          }
+        } catch (e) {
+          console.error(`DEBUG: Error accessing localStorage key "${key}":`, e);
+        }
+      });
 
       toast({
         title: "Emergency Reset",
@@ -107,31 +311,28 @@ export default function ArtisanProductsPage() {
     }
 
     if (!walletLoading && account) {
-      console.log("EMERGENCY FIX: Wallet connected, fetching products");
+      console.log("Wallet connected, fetching products");
 
-      // EMERGENCY FIX: Force multiple refreshes with delays
+      // Initial fetch
       fetchArtisanProducts(); // Immediate fetch
 
-      // Schedule multiple fetches with increasing delays
-      const delays = [500, 1000, 2000, 3000, 5000];
-      delays.forEach(delay => {
-        setTimeout(() => {
-          console.log(`EMERGENCY FIX: Fetching products after ${delay}ms delay`);
-          fetchArtisanProducts();
-        }, delay);
-      });
+      // Schedule just one additional fetch after a delay
+      setTimeout(() => {
+        console.log("Fetching products after delay");
+        fetchArtisanProducts();
+      }, 2000);
     } else if (!walletLoading && !account) {
       console.log("Wallet not connected");
       setIsLoadingProducts(false);
     }
 
-    // Add a refresh interval to periodically check for new products
+    // Add a refresh interval to periodically check for new products, but less frequently
     const intervalId = setInterval(() => {
       if (account) {
-        console.log("EMERGENCY FIX: Refreshing products list");
+        console.log("Refreshing products list");
         fetchArtisanProducts();
       }
-    }, 2000); // Refresh every 2 seconds (more frequent for emergency fix)
+    }, 10000); // Refresh every 10 seconds instead of 2 seconds to reduce load
 
     // Also refresh when the URL changes (e.g., when redirected from add product page)
     const handleRouteChange = () => {
@@ -240,6 +441,89 @@ export default function ArtisanProductsPage() {
             <AlertCircle size={18} className="mr-2" /> Force Reset
           </Button>
 
+          {/* Add button to import NFTs from MetaMask */}
+          <Button
+            variant="outline"
+            onClick={async () => {
+              toast({
+                title: "Importing NFTs",
+                description: "Checking for NFTs in your wallet..."
+              });
+
+              try {
+                // Check if there are any NFTs in localStorage
+                const nftsData = localStorage.getItem('blockchain_user_nfts');
+                if (nftsData) {
+                  const nfts = JSON.parse(nftsData);
+                  const userNfts = nfts[account.toLowerCase()] || [];
+
+                  if (userNfts.length > 0) {
+                    // Convert NFTs to products
+                    const nftProducts = userNfts.map(nft => ({
+                      id: nft.tokenId || `product-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+                      name: nft.name || "Unknown Product",
+                      description: nft.description || "No description available",
+                      materials: ["Unknown"],
+                      artisanId: "unknown",
+                      creationDate: new Date().toISOString(),
+                      imageUrl: nft.imageUrl || `https://picsum.photos/seed/${Date.now()}/600/400`,
+                      price: 0.01,
+                      isVerified: false,
+                      isSold: true,
+                      ownerAddress: account
+                    }));
+
+                    // Save these products to localStorage
+                    const existingProducts = JSON.parse(localStorage.getItem('blockchain_products') || '[]');
+
+                    // Filter out duplicates
+                    const newProducts = nftProducts.filter(np =>
+                      !existingProducts.some(ep => ep.id === np.id)
+                    );
+
+                    if (newProducts.length > 0) {
+                      const combinedProducts = [...existingProducts, ...newProducts];
+                      localStorage.setItem('blockchain_products', JSON.stringify(combinedProducts));
+
+                      toast({
+                        title: "NFTs Imported",
+                        description: `Successfully imported ${newProducts.length} NFTs as products.`
+                      });
+
+                      // Refresh the products list
+                      fetchArtisanProducts();
+                    } else {
+                      toast({
+                        title: "No New NFTs",
+                        description: "All your NFTs are already imported as products."
+                      });
+                    }
+                  } else {
+                    toast({
+                      title: "No NFTs Found",
+                      description: "No NFTs found in your wallet."
+                    });
+                  }
+                } else {
+                  toast({
+                    title: "No NFTs Found",
+                    description: "No NFTs found in your wallet."
+                  });
+                }
+              } catch (e) {
+                console.error("Error importing NFTs:", e);
+                toast({
+                  title: "Import Failed",
+                  description: "Failed to import NFTs from your wallet.",
+                  variant: "destructive"
+                });
+              }
+            }}
+            title="Import NFTs from your wallet as products"
+          >
+            <PlusCircle size={18} className="mr-2" /> Import NFTs
+          </Button>
+
           <Button asChild>
             <Link href="/dashboard/add-product">
               <PlusCircle size={18} className="mr-2" /> Add New Product
@@ -292,6 +576,7 @@ export default function ArtisanProductsPage() {
                         height={40}
                         className="rounded-md object-cover aspect-[3/2]"
                         data-ai-hint="product thumbnail"
+                        unoptimized={product.imageUrl.startsWith('data:')} // Don't optimize base64 images
                       />
                     </TableCell>
                     <TableCell className="font-medium py-3 px-4">

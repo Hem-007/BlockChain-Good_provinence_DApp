@@ -27,6 +27,7 @@ export interface NFT {
   imageUrl: string;
   description: string;
   artisanName: string;
+  transactionHash?: string; // Hash of the transaction that created/minted the NFT
 }
 
 export interface ProvenanceEvent {

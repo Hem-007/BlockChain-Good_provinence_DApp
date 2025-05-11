@@ -18,6 +18,7 @@ export default function DashboardLayout({
     const checkStatus = async () => {
       console.log("Dashboard layout - checking status:", { account, isArtisan, isLoading });
 
+      // Only proceed if we're not already loading
       if (!isLoading) {
         if (!account) {
           console.log("No account connected, redirecting to home");
@@ -32,7 +33,12 @@ export default function DashboardLayout({
           if (isRegisteredLocally) {
             console.log("Found local registration, refreshing artisan profile");
             // If registered in local storage, refresh the profile from blockchain
-            await refreshArtisanProfile();
+            // but only once to prevent continuous refreshing
+            if (!window.localStorage.getItem('profile_refresh_in_progress')) {
+              window.localStorage.setItem('profile_refresh_in_progress', 'true');
+              await refreshArtisanProfile();
+              window.localStorage.removeItem('profile_refresh_in_progress');
+            }
           } else {
             console.log("Not an artisan, redirecting to home");
             router.replace('/');
@@ -41,7 +47,15 @@ export default function DashboardLayout({
       }
     };
 
+    // Only run this effect once when the component mounts
     checkStatus();
+
+    // This is a cleanup function that runs when the component unmounts
+    return () => {
+      if (typeof window !== 'undefined') {
+        window.localStorage.removeItem('profile_refresh_in_progress');
+      }
+    };
   }, [account, isArtisan, isLoading, router, refreshArtisanProfile]);
 
   // Check if we're registered in local storage for immediate feedback

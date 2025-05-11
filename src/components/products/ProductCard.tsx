@@ -6,7 +6,7 @@ import { Card, CardContent, CardFooter, CardHeader, CardTitle, CardDescription }
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ArrowRight, Sparkles, Tag, User, ShoppingCart, Eye } from 'lucide-react'; // Added Eye
-import { getArtisanDetails } from '@/lib/blockchainService'; 
+import { getArtisanDetails } from '@/lib/blockchainService';
 import { useEffect, useState } from 'react';
 import { cn } from '@/lib/utils';
 
@@ -42,6 +42,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ product }) => {
           className="object-cover w-full h-full transition-transform duration-500 group-hover:scale-105"
           sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
           data-ai-hint="artisanal product"
+          unoptimized={product.imageUrl.startsWith('data:')} // Don't optimize base64 images
         />
         <div className="absolute top-2 right-2 flex flex-col gap-1.5 items-end">
             {product.isVerified && (
@@ -63,7 +64,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ product }) => {
         </CardDescription>
         <p className="text-xs text-muted-foreground line-clamp-2 mb-3 h-8">{product.description}</p> {/* Fixed height for description */}
         <div className="flex items-center text-primary font-semibold text-lg">
-          <Tag size={18} className="mr-1.5" /> 
+          <Tag size={18} className="mr-1.5" />
           <span>{product.price} ETH</span>
         </div>
       </CardContent>
